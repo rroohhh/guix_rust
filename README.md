@@ -1,7 +1,7 @@
 # guix_rust
-Recursively create guix packages for rust crates from a lockfile or crates.io
+Recursively create guix packages for rust crates from a lockfile or crates.io.
 
-Usage:
+## Usage
 Either specify a crate available on crates.io and it will automatically create guix packages for the newest version. for example
 ```
 python3.7 -u gen.py diesel
