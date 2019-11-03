@@ -1,0 +1,4 @@
+*.scm
+*.scm_bak
+crates_downloads
+carnix
