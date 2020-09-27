@@ -2,7 +2,6 @@ import requests
 import hashlib
 import jinja2
 from glob import glob
-from functools import lru_cache
 import json
 import base64
 import sys
@@ -10,6 +9,8 @@ import tarfile
 import subprocess
 import toml
 from io import BytesIO
+from joblib import Memory
+memory = Memory("~/.cache/python_cache", verbose=0)
 
 
 base_url = "https://crates.io/"
@@ -21,15 +22,15 @@ def crate_url(name, version = None):
 
     return ret
 
-@lru_cache()
+@memory.cache
 def get(url, *args, **kwargs):
     return requests.get(url, *args, **kwargs)
 
-@lru_cache()
+@memory.cache
 def local_manifests():
     manifests = {}
 
-    if len(sys.argv)  >= 4:
+    if len(sys.argv) >= 4:
         path = sys.argv[3][:-10]
         for cargo_toml in glob(path + "**" + "/Cargo.toml", recursive=True):
             cargo_toml = toml.load(cargo_toml)
@@ -39,7 +40,7 @@ def local_manifests():
 
     return manifests
 
-@lru_cache()
+@memory.cache
 def crate_json(name, version = None):
     # prioritize local crates if we have a local lock file
 
@@ -77,22 +78,33 @@ def crate_json(name, version = None):
     # ok, nothing local matches, just go to crates.io
     return get(crate_url(name, version)).json()
 
-@lru_cache()
+@memory.cache
 def crate_max_version(name):
     return crate_json(name)["crate"]["max_version"]
 
-@lru_cache()
+@memory.cache
 def crate_download(name, version):
-    return get(base_url + crate_json(name, version)["version"]["dl_path"], stream=True)
-
-@lru_cache()
-def crate_hash(name, version):
     try:
-        content = crate_download(name, version).content
-        m = hashlib.sha256()
-        m.update(content)
-        return nix_base32(m.digest())
+        dl_path = crate_json(name, version)["version"]["dl_path"]
+
+        while True:
+            try:
+                return get(base_url + dl_path, stream=True)
+            except:
+                continue
     except:
+        return None
+
+
+
+@memory.cache
+def crate_hash(name, version):
+    content = crate_download(name, version)
+    if content:
+        m = hashlib.sha256()
+        m.update(content.content)
+        return nix_base32(m.digest())
+    else:
         return "FILLMEIN"
 
 def crate_dependencies(name, version, deps = None):
@@ -158,7 +170,7 @@ def gen_package(package, packages):
     print(package, file=sys.stderr)
 
     if "dependencies" in package:
-        real_deps = [real_dep.split()[:2] for real_dep in package["dependencies"]]
+        real_deps = [real_dep.split()[:2] if len(real_dep.split()) >= 2 else [real_dep, [p["version"] for p in packages if p["name"] == real_dep][0]] for real_dep in package["dependencies"]]
     else: 
         real_deps = []
 
